@@ -22,7 +22,7 @@ N_POINTS = 8096
 def train():
     model = SEM_SEG_Model(config['batch_size'], config['num_classes'], config['bn'])
 
-    train_ds, val_ds = load_dataset(config['pcloud_path'], config['batch_size'])
+    train_ds, val_ds = load_dataset(config)
 
     callbacks = [
         keras.callbacks.TensorBoard(
@@ -51,10 +51,14 @@ def train():
     )
 
 
-def load_dataset(in_path, batch_size):
-    assert os.path.exists(in_path), '[error] dataset path not found'
+def load_dataset(config):
+    in_path = config['pcloud_path']
+    batch_size = config['batch_size']
+    label_type = config['label_type']
 
-    features, labels = _load_dataset_from_dir(in_path)
+    assert os.path.exists(in_path), f'[error] dataset {in_path} not found'
+
+    features, labels = _load_dataset_from_dir(in_path, label_type=label_type)
 
     n_tr = int(len(labels) * 0.7)
     train_ds = _convert_to_tf_dataset(features[:n_tr], labels[:n_tr], batch_size)
@@ -102,7 +106,7 @@ if __name__ == '__main__':
 
     config = {
         'pcloud_path': pathlib.Path('.').resolve().parent/'data'/'pcloud',
-        'log_dir' : f'pienet_ptcls_{dt.datetime.now().isoformat(timespec="minutes")}',
+        'label_type': 'corner',
         'log_freq' : 10,
         'test_freq' : 100,
         'batch_size' : 4,
@@ -110,5 +114,10 @@ if __name__ == '__main__':
         'lr' : 0.001,
         'bn' : True,
     }
+
+    timestamp = dt.datetime.now().isoformat(timespec="minutes")
+    config.update({
+        'log_dir': f'pienet_{config["label_type"]}_ptcls_{timestamp}'
+    })
 
     train()
