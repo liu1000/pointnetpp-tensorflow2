@@ -93,6 +93,7 @@ def _convert_to_tf_dataset(features, labels, batch_size):
     ds = tf.data.Dataset.from_tensor_slices((
         tf.constant(features, tf.float32),
         tf.constant(labels, tf.int64)))
+    ds = ds.shuffle(6000, reshuffle_each_iteration=True)
     ds = ds.batch(batch_size, drop_remainder=True)
     return ds
 
