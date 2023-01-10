@@ -12,7 +12,8 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 
-from models.sem_seg_model import SEM_SEG_Model
+import constants as C
+from models.pienet_ptclf_model import PIENET_PT_MODEL
 
 tf.random.set_seed(42)
 
@@ -20,7 +21,7 @@ N_POINTS = 8096
 
 
 def train():
-    model = SEM_SEG_Model(config['batch_size'], config['num_classes'], config['bn'])
+    model = PIENET_PT_MODEL(config['batch_size'], config['num_classes'], config['bn'])
 
     print("Loading data..")
     train_ds, val_ds = load_dataset(config)
@@ -39,8 +40,17 @@ def train():
     print("Compiling..")
     model.compile(
         optimizer=keras.optimizers.Adam(config['lr']),
-        loss=_modified_binary_focal_crossentropy,
-        metrics=[keras.metrics.SparseCategoricalAccuracy()]
+        loss={
+            # pt clf
+            'output_1': _modified_binary_focal_crossentropy,
+            # offset reg
+            'output_2': keras.metrics.MeanSquaredError(),
+        },
+        metrics={
+            'output_1': [keras.metrics.SparseCategoricalAccuracy()],
+            # 'output_2': [keras.metrics.MeanSquaredError()],
+        },
+        loss_weights={'output_1': 1.0, 'output_2': 1.0},
     )
 
     print("Fitting..")
@@ -105,17 +115,25 @@ def _load_single_pcloud(path, label_type=""):
     points = (
         pd.read_parquet(path)
             .drop_duplicates(["x", "y", "z"])  # TODO shouuld keep the closest
-            .assign(label=lambda df: df[label_col].astype(int))
+            .assign(label=lambda df: df[label_col].astype(int),
+                    x_diff=lambda df: df.x - df.x_orig,
+                    y_diff=lambda df: df.y - df.y_orig,
+                    z_diff=lambda df: df.z - df.z_orig)
+            .fillna(0)
     )
     point_coords = points[["x", "y", "z"]].values
-    point_labels = points[["label"]].values
+    point_labels = points[["label", "x_diff", "y_diff", "z_diff"]].values
     return point_coords, point_labels
 
 
 def _convert_to_tf_dataset(features, labels, batch_size):
     ds = tf.data.Dataset.from_tensor_slices((
         tf.constant(features, tf.float32),
-        tf.constant(labels, tf.int64)))
+        {
+            "output_1": tf.constant(labels[:, :, :1], tf.int64),  # pt clf
+            "output_2": tf.constant(labels[:, :, 1:4], tf.float32)  # offset reg
+        }
+    ))
     ds = ds.shuffle(6000, reshuffle_each_iteration=True)
     ds = ds.batch(batch_size, drop_remainder=True)
     return ds
@@ -127,7 +145,7 @@ if __name__ == '__main__':
         'pcloud_path': pathlib.Path('.').resolve().parent/'data'/'pcloud',
         'tfds_train_path': pathlib.Path('.')/'data'/'pienet_ptclf_tr',
         'tfds_val_path': pathlib.Path('.')/'data'/'pienet_ptclf_val',
-        'regen_tfds': True,
+        'regen_tfds': False,
         'label_type': 'corner',
         'log_freq' : 10,
         'test_freq' : 100,
