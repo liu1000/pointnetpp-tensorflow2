@@ -56,18 +56,28 @@ def train():
 
 
 def load_dataset(config):
-    in_path = config['pcloud_path']
-    batch_size = config['batch_size']
-    label_type = config['label_type']
+    if config['regen_tfds'] or not config['tfds_train_path'].exists():
+        print("Preparing TF Dataset from raw PCloud data")
+        in_path = config['pcloud_path']
+        batch_size = config['batch_size']
+        label_type = config['label_type']
 
-    assert os.path.exists(in_path), f'[error] dataset {in_path} not found'
+        assert os.path.exists(in_path), f'[error] dataset {in_path} not found'
 
-    features, labels = _load_dataset_from_dir(in_path, label_type=label_type)
+        features, labels = _load_dataset_from_dir(in_path, label_type=label_type)
 
-    n_tr = int(len(labels) * 0.7)
-    train_ds = _convert_to_tf_dataset(features[:n_tr], labels[:n_tr], batch_size)
-    val_ds = _convert_to_tf_dataset(features[n_tr:], labels[n_tr:], batch_size)
+        n_tr = int(len(labels) * 0.7)
+        train_ds = _convert_to_tf_dataset(features[:n_tr], labels[:n_tr], batch_size)
+        val_ds = _convert_to_tf_dataset(features[n_tr:], labels[n_tr:], batch_size)
 
+        train_ds.save(str(config['tfds_train_path']))
+        val_ds.save(str(config['tfds_val_path']))
+
+        return train_ds, val_ds
+
+    print("Loading previously saved TF Datasets")
+    train_ds = tf.data.Dataset.load(str(config['tfds_train_path']))
+    val_ds = tf.data.Dataset.load(str(config['tfds_val_path']))
     return train_ds, val_ds
 
 
@@ -115,6 +125,9 @@ if __name__ == '__main__':
 
     config = {
         'pcloud_path': pathlib.Path('.').resolve().parent/'data'/'pcloud',
+        'tfds_train_path': pathlib.Path('.')/'data'/'pienet_ptclf_tr',
+        'tfds_val_path': pathlib.Path('.')/'data'/'pienet_ptclf_val',
+        'regen_tfds': True,
         'label_type': 'corner',
         'log_freq' : 10,
         'test_freq' : 100,
