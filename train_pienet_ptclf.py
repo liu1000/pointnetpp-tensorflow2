@@ -22,24 +22,28 @@ N_POINTS = 8096
 def train():
     model = SEM_SEG_Model(config['batch_size'], config['num_classes'], config['bn'])
 
+    print("Loading data..")
     train_ds, val_ds = load_dataset(config)
 
     callbacks = [
         keras.callbacks.TensorBoard(
             f'./logs/{config["log_dir"]}', update_freq=50),
-        keras.callbacks.ModelCheckpoint(
-            f'./logs/{config["log_dir"]}/model/weights', 'val_sparse_categorical_accuracy', save_best_only=True)
+        # keras.callbacks.ModelCheckpoint(
+        #     f'./logs/{config["log_dir"]}/model/weights', 'val_sparse_categorical_accuracy', save_best_only=True)
     ]
 
+    print("Building..")
     model.build((config['batch_size'], N_POINTS, 3))
     print(model.summary())
 
+    print("Compiling..")
     model.compile(
         optimizer=keras.optimizers.Adam(config['lr']),
-        loss=keras.losses.SparseCategoricalCrossentropy(),  # should use focal loss as in pie net
+        loss=_modified_binary_focal_crossentropy,
         metrics=[keras.metrics.SparseCategoricalAccuracy()]
     )
 
+    print("Fitting..")
     model.fit(
         train_ds,
         validation_data=val_ds,
@@ -65,6 +69,11 @@ def load_dataset(config):
     val_ds = _convert_to_tf_dataset(features[n_tr:], labels[n_tr:], batch_size)
 
     return train_ds, val_ds
+
+
+def _modified_binary_focal_crossentropy(y_true, y_pred):
+    y_pred_pos = y_pred[:, :, 1:]
+    return tf.keras.metrics.binary_focal_crossentropy(y_true, y_pred_pos)
 
 
 def _load_dataset_from_dir(path, label_type="edge", n_files=None):
